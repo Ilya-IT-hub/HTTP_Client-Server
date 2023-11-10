@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Client</title>
+</head>
+
+<body>
+
+  <div>Available keywords: Alaska, South Carolina, California</div>
+  <input id="keywordInput" type="text" placeholder="Enter keyword">
+  <button onclick="getUrls()">Get URLs</button>
+  <div id="urlsList"></div>
+
+  <div id="downloadStatus"></div>
+  <div id="downloadedList"></div>
+
+  <script>
+    const socket = new WebSocket('ws://localhost:8080');
+
+    socket.onopen = function () {
+      console.log('Connected to server');
+    }
+
+    socket.onmessage = function (event) {
+      const data = JSON.parse(event.data);
+      if (data.urls) {
+        displayUrls(data.urls);
+      } else if (data.status === 'downloading') {
+        updateDownloadStatus(data.fileName, data.totalSize);
+        updateDownloadProgress(data.fileName, data.progress);
+      } else if (data.status === 'completed') {
+        displayDownloadedContent(data.fileName);
+      } else if (data.status === 'error') {
+        displayError(data.message);
+      }
+    };
+
+    socket.onclose = function (event) {
+      console.log('Disconnected from server');
+    };
+
+    function getUrls() {
+      const keyword = document.getElementById('keywordInput').value;
+      socket.send(keyword);
+    }
+
+    function displayUrls(urls) {
+      const urlsList = document.getElementById('urlsList');
+      urlsList.innerHTML = '';
+
+      if (urls.length === 0) {
+        displayError('No links found for this keyword');
+      } else {
+        urls.forEach((url) => {
+          const container = document.createElement('div');
+          container.style.marginBottom = '10px';
+
+          const link = document.createElement('a');
+          link.setAttribute('target', '_blank');
+          link.href = url;
+          link.innerHTML = url;
+          container.appendChild(link);
+
+          const progressBar = document.createElement('progress');
+          progressBar.value = 0;
+          progressBar.max = 100;
+          container.appendChild(progressBar);
+
+          const downloadButton = document.createElement('button');
+          downloadButton.innerHTML = 'Download Content';
+          container.appendChild(downloadButton);
+
+          urlsList.appendChild(container);
+
+          downloadButton.addEventListener('click', function () {
+            downloadContent(url, progressBar);
+          });
+        });
+      }
+    }
+
+    function displayError(message) {
+      const urlsList = document.getElementById('urlsList');
+      urlsList.innerHTML = '';
+
+      const errorContainer = document.createElement('div');
+      errorContainer.innerHTML = message;
+      urlsList.appendChild(errorContainer);
+    }
+
+    function updateDownloadStatus(fileName, totalSize) {
+      const downloadStatus = document.getElementById('downloadStatus');
+      downloadStatus.innerHTML = `Downloading ${fileName} - ${formatBytes(totalSize)}`;
+    }
+
+    function updateDownloadProgress(fileName, progress) {
+      const downloadStatus = document.getElementById('downloadStatus');
+      downloadStatus.innerHTML = `Downloading ${fileName} - ${progress.toFixed(2)}%`;
+    }
+
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+      const i = parseInt(Math.floor(Math.log(bytes) / Math.log(k)));
+      return Math.round(100 * (bytes / Math.pow(k, i))) / 100 + ' ' + sizes[i];
+    }
+
+    function displayDownloadedContent(fileName) {
+      const downloadedList = document.getElementById('downloadedList');
+      const link = document.createElement('a');
+      link.href = `downloads/${fileName}`;
+      link.target = '_blank';
+      link.download = fileName;
+      link.innerHTML = `You clicked on ${link.href}`;
+      downloadedList.appendChild(link);
+    }
+
+    function downloadContent(url, progressBar) {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.responseType = 'blob';
+
+      xhr.onloadstart = function () {
+        console.log('Download started');
+      };
+
+      xhr.onprogress = function (event) {
+        if (event.lengthComputable) {
+          const progress = (event.loaded / event.total) * 100;
+          progressBar.value = progress;
+        }
+      };
+
+      xhr.onload = function () {
+        if (xhr.status === 200) {
+          const urlSegments = url.split('/');
+          const filename = urlSegments[urlSegments.length - 1];
+
+          const blob = new Blob([xhr.response]);
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = filename ? filename : 'downloaded_file';
+          link.click();
+          progressBar.value = 100;
+        } else {
+          console.log('Error occurred during download:', xhr.status);
+        }
+      };
+
+      xhr.onerror = function () {
+        console.log('Error occurred during download');
+      };
+
+      xhr.send();
+    }
+  </script>
+</body>
+
+</html>
